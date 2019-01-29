@@ -40,7 +40,7 @@ clean:
 
 .PHONY: distclean
 distclean:
-	rm -rf c_src priv
+	rm -rf c_src priv _build
 
 # We want rules also for cuda29/lcuda29
 EXECUTABLES += lcuda29 cuda29
