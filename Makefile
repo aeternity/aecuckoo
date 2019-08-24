@@ -1,3 +1,5 @@
+UNAME_S = $(shell uname -s)
+
 EXECUTABLES = \
 	mean29-generic \
 	mean29-avx2 \
@@ -14,13 +16,17 @@ CUCKOO = c_src/src/cuckoo
 HDRS=$(CUCKOO)/cuckoo.h $(CUCKOO)/../crypto/siphash.h
 
 # Flags from upstream makefile
-OPT ?= -O3
+GPP_OPT ?= -O3
+MSVC_OPT ?= /Ox
 
 GPP_ARCH_FLAGS ?= -m64 -x c++
+MSVC_ARCH_FLAGS ?=
 
 # -Wno-deprecated-declarations shuts up Apple OSX clang
-FLAGS ?= -Wall -Wno-format -Wno-deprecated-declarations -D_POSIX_C_SOURCE=200112L $(OPT) -DPREFETCH -I. $(CPPFLAGS) -pthread
-GPP ?= g++ $(GPP_ARCH_FLAGS) -std=c++11 $(FLAGS)
+GPP_FLAGS ?= -Wall -Wno-format -Wno-deprecated-declarations -D_POSIX_C_SOURCE=200112L $(GPP_OPT) -DPREFETCH -I. $(CPPFLAGS) -pthread
+GPP ?= g++ $(GPP_ARCH_FLAGS) -std=c++11 $(GPP_FLAGS)
+MSVC_FLAGS ?= /Wall /D_POSIX_C_SOURCE=200112L $(MSVC_OPT) -DPREFETCH /I. $(CPPFLAGS)
+MSVC ?= cl.exe $(MSVC_ARCH_FLAGS) $(MSVC_FLAGS)
 BLAKE_2B_SRC ?= ../crypto/blake2b-ref.c
 NVCC ?= nvcc -std=c++11
 
@@ -62,35 +68,43 @@ ifneq ($(strip $(shell cd c_src && git diff-index $(COMMIT) | wc -l)),0)
 endif
 endif
 
+ifeq ($(filter MINGW%,$(UNAME_S)),)
+compile = cd $(CUCKOO) && $(GPP) -o $(1) $(3) $(2) $(BLAKE_2B_SRC)
+else
+compile = cd $(CUCKOO) && $(MSVC) /out $(1) $(3) $(2) $(BLAKE_2B_SRC)
+endif
+
+compile_nvcc = (cd $(CUCKOO); $(NVCC) -o $(1) $(3) $(2) $(BLAKE_2B_SRC))
+
+
 # One rule to copy them all
 $(PRIVEXECS): $(CUCKOO)/$$(@F)
 	cp $(CUCKOO)/$(@F) $(PRIV)
 
 # The args vary slightly so spell out the compilation rules
 $(CUCKOO)/lean15-generic: $(HDRS) $(CUCKOO)/lean.hpp $(CUCKOO)/lean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DATOMIC -DEDGEBITS=15 lean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),lean.cpp,-DATOMIC -DEDGEBITS=15)
 
 $(CUCKOO)/lean29-generic: $(HDRS) $(CUCKOO)/lean.hpp $(CUCKOO)/lean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DATOMIC -DEDGEBITS=29 lean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),lean.cpp,-DATOMIC -DEDGEBITS=29)
 
 $(CUCKOO)/lean29-avx2: $(HDRS) $(CUCKOO)/lean.hpp $(CUCKOO)/lean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DATOMIC -mavx2 -DNSIPHASH=8 -DEDGEBITS=29 lean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),lean.cpp,-DATOMIC -mavx2 -DNSIPHASH=8 -DEDGEBITS=29)
 
 $(CUCKOO)/mean15-generic: $(HDRS) $(CUCKOO)/mean.hpp $(CUCKOO)/mean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DSAVEEDGES -DXBITS=0 -DNSIPHASH=1 -DEDGEBITS=15 mean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),mean.cpp,-DSAVEEDGES -DXBITS=0 -DNSIPHASH=1 -DEDGEBITS=15)
 
 $(CUCKOO)/mean29-generic: $(HDRS) $(CUCKOO)/mean.hpp $(CUCKOO)/mean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DSAVEEDGES -DNSIPHASH=1 -DEDGEBITS=29 mean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),mean.cpp,-DSAVEEDGES -DNSIPHASH=1 -DEDGEBITS=29)
 
 $(CUCKOO)/mean29-avx2: $(HDRS) $(CUCKOO)/mean.hpp $(CUCKOO)/mean.cpp
-	(cd $(CUCKOO); $(GPP) -o $(@F) -DSAVEEDGES -mavx2 -DNSIPHASH=8 -DEDGEBITS=29 mean.cpp $(BLAKE_2B_SRC))
+	$(call compile,$(@F),mean.cpp,-DSAVEEDGES -mavx2 -DNSIPHASH=8 -DEDGEBITS=29)
 
-$(CUCKOO)/lcuda29:	$(CUCKOO)/../crypto/siphash.cuh $(CUCKOO)/lean.cu
-	(cd $(CUCKOO); $(NVCC) -o $(@F) -DEDGEBITS=29 -arch sm_35 lean.cu $(BLAKE_2B_SRC))
+$(CUCKOO)/lcuda29: $(CUCKOO)/../crypto/siphash.cuh $(CUCKOO)/lean.cu
+	$(call compile_nvcc,$(@F),lean.cu,-DEDGEBITS=29 -arch sm_35)
 
-$(CUCKOO)/cuda29:		$(CUCKOO)/../crypto/siphash.cuh $(CUCKOO)/mean.cu
-	(cd $(CUCKOO); $(NVCC) -o $(@F) -DEDGEBITS=29 -arch sm_35 mean.cu $(BLAKE_2B_SRC))
-
+$(CUCKOO)/cuda29: $(CUCKOO)/../crypto/siphash.cuh $(CUCKOO)/mean.cu
+	$(call compile_nvcc,$(@F),mean.cu,-DEDGEBITS=29 -arch sm_35)
 
 # Create the private dir
 $(PRIV):
