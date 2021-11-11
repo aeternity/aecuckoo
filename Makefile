@@ -1,10 +1,14 @@
 EXECUTABLES = \
 	mean29-generic \
-	mean29-avx2 \
 	lean29-generic \
-	lean29-avx2 \
 	mean15-generic \
 	lean15-generic
+
+ifeq ($(shell uname -m), x86_64)
+EXECUTABLES += \
+	mean29-avx2 \
+	lean29-avx2
+endif
 
 PRIVEXECS = $(addprefix $(PRIV)/, $(EXECUTABLES))
 
