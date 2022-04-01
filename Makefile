@@ -20,6 +20,10 @@ HDRS=$(CUCKOO)/cuckoo.h $(CUCKOO)/../crypto/siphash.h
 # Flags from upstream makefile
 OPT ?= -O3
 
+ifeq ($(shell uname -m), aarch64)
+GPP_ARCH_FLAGS = -march=native -x c++
+endif
+
 GPP_ARCH_FLAGS ?= -m64 -x c++
 
 # -Wno-deprecated-declarations shuts up Apple OSX clang
